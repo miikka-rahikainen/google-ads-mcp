@@ -1,0 +1,23 @@
+{
+  "name": "dagmar-google-ads",
+  "version": "0.1.0",
+  "description": "Read Google Ads data through Dagmar's authenticated MCP service.",
+  "author": {
+    "name": "Dagmar"
+  },
+  "keywords": ["google-ads", "analytics", "mcp", "dagmar"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Dagmar Google Ads",
+    "shortDescription": "Analyze the Google Ads accounts you can access.",
+    "longDescription": "Connects Codex to Dagmar's hosted Google Ads MCP service. Each user signs in with Google and only sees accounts permitted to that Google identity.",
+    "developerName": "Dagmar",
+    "category": "Business",
+    "capabilities": ["Read"],
+    "defaultPrompt": [
+      "List the Google Ads accounts I can access.",
+      "Summarize Google Ads performance for last month.",
+      "Analyze campaign trends without making changes."
+    ]
+  }
+}

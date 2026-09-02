@@ -1,0 +1,20 @@
+{
+  "name": "personal",
+  "description": "Dagmar's internal AI integrations for advertising analysis.",
+  "owner": {
+    "name": "Dagmar"
+  },
+  "plugins": [
+    {
+      "name": "dagmar-google-ads",
+      "source": "./plugins/dagmar-google-ads",
+      "description": "Read Google Ads data through Dagmar's authenticated MCP service.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Dagmar"
+      },
+      "category": "Business",
+      "tags": ["google-ads", "analytics", "mcp"]
+    }
+  ]
+}

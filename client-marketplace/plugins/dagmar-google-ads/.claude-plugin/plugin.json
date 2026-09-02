@@ -1,0 +1,10 @@
+{
+  "name": "dagmar-google-ads",
+  "version": "0.1.0",
+  "description": "Read Google Ads data through Dagmar's authenticated MCP service.",
+  "author": {
+    "name": "Dagmar"
+  },
+  "keywords": ["google-ads", "analytics", "mcp", "dagmar"],
+  "mcpServers": "./.mcp.json"
+}

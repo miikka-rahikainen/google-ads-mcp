@@ -52,6 +52,10 @@ class TestSearch(unittest.TestCase):
             limit=10,
         )
 
+        mock_get_service.assert_called_once_with(
+            "GoogleAdsService", login_customer_id=None
+        )
+
         # Verify query
         expected_query = (
             "SELECT campaign.id,campaign.name FROM campaign "
@@ -68,6 +72,24 @@ class TestSearch(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["id"], 1)
         self.assertEqual(results[1]["name"], "C2")
+
+    @patch("ads_mcp.utils.get_googleads_service")
+    def test_search_uses_per_request_login_customer_id(self, mock_get_service):
+        """Tests that search selects the requested manager account."""
+        mock_service = MagicMock()
+        mock_service.search_stream.return_value = []
+        mock_get_service.return_value = mock_service
+
+        search.search(
+            customer_id="8965803529",
+            fields=["customer.id"],
+            resource="customer",
+            login_customer_id="4741284197",
+        )
+
+        mock_get_service.assert_called_once_with(
+            "GoogleAdsService", login_customer_id="4741284197"
+        )
 
     def test_search_tool_description(self):
         """Tests that the tool description is generated correctly."""

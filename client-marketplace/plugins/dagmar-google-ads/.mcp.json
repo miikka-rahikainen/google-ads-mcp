@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dagmar-google-ads": {
+      "type": "http",
+      "url": "https://google-ads-mcp.dagmar.app/mcp"
+    }
+  }
+}

@@ -15,6 +15,8 @@
 """Test cases for the utils module."""
 
 import unittest
+import os
+from unittest.mock import MagicMock, patch
 from google.ads.googleads.v25.enums.types.campaign_status import (
     CampaignStatusEnum,
 )
@@ -100,3 +102,60 @@ class TestUtils(unittest.TestCase):
                 subprocess.Popen(["mock_cmd"], stdin=subprocess.PIPE)
 
         mock_popen.assert_called_once_with(["mock_cmd"], stdin=subprocess.PIPE)
+
+    @patch("ads_mcp.utils.GoogleAdsClient")
+    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
+    @patch("ads_mcp.utils._create_credentials")
+    def test_googleads_client_uses_explicit_login_customer_id(
+        self, mock_credentials, _mock_developer_token, mock_client
+    ):
+        """A request-level manager id overrides the deployment default."""
+        credentials = MagicMock()
+        mock_credentials.return_value = credentials
+
+        with patch.dict(
+            os.environ,
+            {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "1111111111"},
+            clear=False,
+        ):
+            utils._get_googleads_client(login_customer_id="4741284197")
+
+        mock_client.assert_called_once_with(
+            credentials=credentials,
+            developer_token="dev-token",
+            use_proto_plus=True,
+            login_customer_id="4741284197",
+        )
+
+    @patch("ads_mcp.utils.GoogleAdsClient")
+    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
+    @patch("ads_mcp.utils._create_credentials")
+    def test_googleads_client_falls_back_to_environment_login_customer_id(
+        self, mock_credentials, _mock_developer_token, mock_client
+    ):
+        """The environment setting remains supported when no override is supplied."""
+        credentials = MagicMock()
+        mock_credentials.return_value = credentials
+
+        with patch.dict(
+            os.environ,
+            {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "2524599092"},
+            clear=False,
+        ):
+            utils._get_googleads_client()
+
+        mock_client.assert_called_once_with(
+            credentials=credentials,
+            developer_token="dev-token",
+            use_proto_plus=True,
+            login_customer_id="2524599092",
+        )
+
+    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
+    @patch("ads_mcp.utils._create_credentials")
+    def test_googleads_client_rejects_invalid_login_customer_id(
+        self, _mock_credentials, _mock_developer_token
+    ):
+        """Manager ids must be sent without punctuation."""
+        with self.assertRaisesRegex(ValueError, "digits only"):
+            utils._get_googleads_client(login_customer_id="474-128-4197")

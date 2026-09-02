@@ -97,17 +97,24 @@ def _get_login_customer_id() -> str | None:
     return os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
 
 
-def _get_googleads_client() -> GoogleAdsClient:
+def _get_googleads_client(
+    login_customer_id: str | None = None,
+) -> GoogleAdsClient:
     args = {
         "credentials": _create_credentials(),
         "developer_token": _get_developer_token(),
         "use_proto_plus": True,
     }
 
-    # If the login-customer-id is not set, avoid setting None.
-    login_customer_id = _get_login_customer_id()
+    # A tool-level value allows callers to select the manager account for a
+    # specific request. Fall back to the environment variable for backwards
+    # compatibility with single-manager deployments.
+    if login_customer_id is None:
+        login_customer_id = _get_login_customer_id()
 
     if login_customer_id:
+        if not login_customer_id.isdigit():
+            raise ValueError("login_customer_id must contain digits only.")
         args["login_customer_id"] = login_customer_id
 
     client = GoogleAdsClient(**args)
@@ -115,10 +122,12 @@ def _get_googleads_client() -> GoogleAdsClient:
     return client
 
 
-def get_googleads_service(serviceName: str) -> GoogleAdsServiceClient:
-    return _get_googleads_client().get_service(
-        serviceName, interceptors=[MCPHeaderInterceptor()]
-    )
+def get_googleads_service(
+    serviceName: str, login_customer_id: str | None = None
+) -> GoogleAdsServiceClient:
+    return _get_googleads_client(
+        login_customer_id=login_customer_id
+    ).get_service(serviceName, interceptors=[MCPHeaderInterceptor()])
 
 
 def get_googleads_type(typeName: str):
