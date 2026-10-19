@@ -104,6 +104,7 @@ To enable it, set the following environment variables:
 - `GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET`: Your Google Cloud OAuth 2.0 Client Secret.
 - `GOOGLE_ADS_MCP_BASE_URL`: (Optional) The base URL where the server is accessible (defaults to `http://localhost:8080`).
 - `GOOGLE_ADS_MCP_JWT_SIGNING_KEY`: (Optional) Secret key used to sign FastMCP JWT tokens across multiple server instances or deployments.
+- `GOOGLE_ADS_MCP_ALLOWED_DOMAINS`: (Optional) Comma-separated Google Workspace domains whose accounts may use the server (defaults to `dagmar.fi`). A token is accepted only when its verified e-mail and Workspace hosted domain both match an allowed domain.
 - `GOOGLE_ADS_MCP_STORAGE_TYPE`: (Optional) Storage backend for OAuth state (`filetree`, `redis`, `firestore`, or `memory`).
 - `GOOGLE_ADS_MCP_STORAGE_PATH`: (Optional) Directory path for `filetree` persistent storage.
 - `GOOGLE_ADS_MCP_STORAGE_REDIS_URL`: (Optional) Redis URL for `redis` persistent storage.

@@ -174,7 +174,7 @@ class TestAuthConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_client_storage()
 
-    @patch("fastmcp.server.auth.providers.google.GoogleProvider")
+    @patch("ads_mcp.domain_restriction.DomainRestrictedGoogleProvider")
     def test_coordinator_init_with_jwt_signing_key_and_storage(
         self, mock_provider
     ):
@@ -190,11 +190,14 @@ class TestAuthConfig(unittest.TestCase):
 
         importlib.reload(coord)
 
-        mock_provider.assert_called_once()
+        # The first import of the module inside this test also constructs the
+        # provider, so only the arguments of the latest call are checked.
+        mock_provider.assert_called()
         _, kwargs = mock_provider.call_args
         self.assertEqual(kwargs["client_id"], "dummy_client_id")
         self.assertEqual(kwargs["client_secret"], "dummy_client_secret")
         self.assertEqual(kwargs["jwt_signing_key"], "custom_jwt_signing_key")
+        self.assertEqual(kwargs["allowed_domains"], ("dagmar.fi",))
         self.assertIn("client_storage", kwargs)
         self.assertIsInstance(kwargs["client_storage"], FernetEncryptionWrapper)
 
