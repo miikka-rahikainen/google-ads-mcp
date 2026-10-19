@@ -1,8 +1,9 @@
 # Use a slim Python image
 FROM python:3.11-slim
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Install uv from PyPI with a pinned version. The deployment host cannot pull
+# images from ghcr.io, so the uv image is not used.
+RUN pip install --no-cache-dir uv==0.12.6
 
 # Set the working directory in the container
 WORKDIR /app
