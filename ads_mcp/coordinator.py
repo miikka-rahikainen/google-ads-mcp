@@ -22,6 +22,12 @@ of the server.
 import os
 from typing import Any
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+from mcp import types as mcp_types
+from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler
+from ads_mcp.hosted_config import validate_hosted_configuration
+
+validate_hosted_configuration()
 from ads_mcp.auth_storage import create_client_storage
 from ads_mcp.domain_restriction import (
     DomainRestrictedGoogleProvider,
@@ -58,6 +64,37 @@ if _CLIENT_ID and _CLIENT_SECRET:
 else:
     mcp = FastMCP("Google Ads Server")
 
+mcp.add_extension(TasksExtension())
+
+
+def ensure_subscriptions_listen(server: FastMCP) -> bool:
+    """Register the MCP 2026 subscription stream when FastMCP omits it.
+
+    FastMCP 4 (including 4.0.3) builds its low-level ``Server`` without the SDK's
+    ``on_subscriptions_listen`` handler. Some modern clients open that stream
+    while loading tools; without it, the SDK returns HTTP 404 / method not
+    found, which mcp-go reports misleadingly as a missing session.
+
+    The guard preserves a native FastMCP implementation once one is shipped.
+
+    Returns:
+        True when the compatibility handler was installed, otherwise False.
+    """
+    low_level_server = server._mcp_server
+    if "subscriptions/listen" in low_level_server._request_handlers:
+        return False
+
+    subscription_bus = InMemorySubscriptionBus()
+    low_level_server.add_request_handler(
+        "subscriptions/listen",
+        mcp_types.SubscriptionsListenRequestParams,
+        ListenHandler(subscription_bus),
+    )
+    return True
+
+
+ensure_subscriptions_listen(mcp)
+
 
 def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
     """Loads the tools configuration and dynamically mounts the tools sub-servers."""
@@ -69,8 +106,18 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
     # Map of category name -> FastMCP sub-server
     sub_servers = {}
 
-    # Discover and dynamically load all tool modules
+    # A hard allowlist prevents upstream mutation tools from being imported.
+    allowed_modules = {"core", "search", "get_resource_metadata"}
+    allowed_tools = {
+        "customers": {"list_accessible_customers"},
+        "search": {"search"},
+        "metadata": {"get_resource_metadata"},
+    }
+
+    # Discover and dynamically load approved read-only tool modules
     for _, module_name, _ in pkgutil.iter_modules(tools_pkg.__path__):
+        if module_name not in allowed_modules:
+            continue
         full_module_name = f"ads_mcp.tools.{module_name}"
         module = importlib.import_module(full_module_name)
 
@@ -79,6 +126,13 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
             attr_val = getattr(module, attr_name)
             if isinstance(attr_val, FastMCP):
                 category = attr_val.name
+                if (
+                    category in sub_servers
+                    and sub_servers[category] is not attr_val
+                ):
+                    raise ValueError(
+                        f"Conflicting FastMCP sub-servers registered for category '{category}'."
+                    )
                 sub_servers[category] = attr_val
 
     config = ToolsConfig.load()
@@ -94,11 +148,17 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
                 tool_names.append(val.name)
 
         for name in tool_names:
-            if not config.is_tool_enabled(category, name):
+            if name not in allowed_tools.get(
+                category, set()
+            ) or not config.is_tool_enabled(category, name):
                 sub_mcp.local_provider.remove_tool(name)
 
         # Determine prefix/namespace
-        namespace_prefix = config.get_namespace_prefix(category)
+        from ads_mcp.hosted_config import is_hosted
+
+        namespace_prefix = (
+            category if is_hosted() else config.get_namespace_prefix(category)
+        )
 
         # Mount the sub-server
         parent_mcp.mount(sub_mcp, namespace=namespace_prefix or None)

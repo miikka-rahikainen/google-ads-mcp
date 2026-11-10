@@ -74,21 +74,85 @@ class TestSearch(unittest.TestCase):
         self.assertEqual(results[1]["name"], "C2")
 
     @patch("ads_mcp.utils.get_googleads_service")
-    def test_search_uses_per_request_login_customer_id(self, mock_get_service):
-        """Tests that search selects the requested manager account."""
+    @patch("ads_mcp.utils.format_output_row")
+    def test_search_with_int_customer_id(
+        self, mock_format_row, mock_get_service
+    ):
+        """Tests that integer customer_id is sanitized to string of digits."""
         mock_service = MagicMock()
-        mock_service.search_stream.return_value = []
         mock_get_service.return_value = mock_service
 
+        mock_batch = MagicMock()
+        mock_batch.results = []
+        mock_batch.field_mask.paths = ["campaign.id"]
+        mock_service.search_stream.return_value = [mock_batch]
+
         search.search(
-            customer_id="8965803529",
-            fields=["customer.id"],
-            resource="customer",
-            login_customer_id="4741284197",
+            customer_id=1234567890,
+            fields=["campaign.id"],
+            resource="campaign",
+        )
+
+        mock_service.search_stream.assert_called_once_with(
+            customer_id="1234567890",
+            query="SELECT campaign.id FROM campaign PARAMETERS omit_unselected_resource_names=true",
+        )
+
+    @patch("ads_mcp.utils.get_googleads_service")
+    @patch("ads_mcp.utils.format_output_row")
+    def test_search_with_hyphenated_customer_id(
+        self, mock_format_row, mock_get_service
+    ):
+        """Tests that hyphenated string customer_id is sanitized to string of digits."""
+        mock_service = MagicMock()
+        mock_get_service.return_value = mock_service
+
+        mock_batch = MagicMock()
+        mock_batch.results = []
+        mock_batch.field_mask.paths = ["campaign.id"]
+        mock_service.search_stream.return_value = [mock_batch]
+
+        search.search(
+            customer_id="123-456-7890",
+            fields=["campaign.id"],
+            resource="campaign",
         )
 
         mock_get_service.assert_called_once_with(
-            "GoogleAdsService", login_customer_id="4741284197"
+            "GoogleAdsService", login_customer_id=None
+        )
+        mock_service.search_stream.assert_called_once_with(
+            customer_id="1234567890",
+            query="SELECT campaign.id FROM campaign PARAMETERS omit_unselected_resource_names=true",
+        )
+
+    @patch("ads_mcp.utils.get_googleads_service")
+    @patch("ads_mcp.utils.format_output_row")
+    def test_search_with_login_customer_id(
+        self, mock_format_row, mock_get_service
+    ):
+        """Tests that search forwards login_customer_id to get_googleads_service."""
+        mock_service = MagicMock()
+        mock_get_service.return_value = mock_service
+
+        mock_batch = MagicMock()
+        mock_batch.results = []
+        mock_batch.field_mask.paths = ["campaign.id"]
+        mock_service.search_stream.return_value = [mock_batch]
+
+        search.search(
+            customer_id="123-456-7890",
+            fields=["campaign.id"],
+            resource="campaign",
+            login_customer_id="999-888-7777",
+        )
+
+        mock_get_service.assert_called_once_with(
+            "GoogleAdsService", login_customer_id="999-888-7777"
+        )
+        mock_service.search_stream.assert_called_once_with(
+            customer_id="1234567890",
+            query="SELECT campaign.id FROM campaign PARAMETERS omit_unselected_resource_names=true",
         )
 
     def test_search_tool_description(self):

@@ -1,0 +1,14 @@
+# Cloud Build upload uses the same strict source allowlist.
+**
+!Dockerfile
+!pyproject.toml
+!requirements.lock
+!README.md
+!LICENSE
+!MANIFEST.in
+!cloudbuild.yaml
+!ads_mcp/
+!ads_mcp/**
+ads_mcp/**/__pycache__/
+ads_mcp/**/*.pyc
+ads_mcp/**/.DS_Store

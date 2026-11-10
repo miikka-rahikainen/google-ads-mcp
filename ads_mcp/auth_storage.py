@@ -53,11 +53,19 @@ def create_client_storage() -> Any:
             raise ValueError(
                 "Storage path must be provided via GOOGLE_ADS_MCP_STORAGE_PATH environment variable."
             )
-        from key_value.aio.stores.filetree import FileTreeStore
+        from key_value.aio.stores.filetree import (
+            FileTreeStore,
+            FileTreeV1KeySanitizationStrategy,
+        )
 
         path_obj = pathlib.Path(st_path)
         path_obj.mkdir(parents=True, exist_ok=True)
-        store = FileTreeStore(data_directory=path_obj)
+        store = FileTreeStore(
+            data_directory=path_obj,
+            key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                path_obj
+            ),
+        )
     elif st_type == "redis":
         from key_value.aio.stores.redis import RedisStore
 
@@ -76,6 +84,17 @@ def create_client_storage() -> Any:
                 "with 'pip install py-key-value-aio[firestore]'."
             ) from exc
 
+        from ads_mcp.hosted_config import is_hosted
+
+        if is_hosted():
+            from ads_mcp.legacy_firestore import LegacyFileTreeFirestoreStore
+
+            store = LegacyFileTreeFirestoreStore(
+                project=fs_project, database=fs_database
+            )
+        else:
+            store = None
+
         from google.auth.exceptions import DefaultCredentialsError
 
         # Both project and database are optional: when omitted, the store falls
@@ -84,15 +103,19 @@ def create_client_storage() -> Any:
         # The sanitization strategies are needed because CIMD client ids are
         # URLs, and Firestore rejects the '/' they contain in a document id.
         try:
-            store = FirestoreStore(
-                project=fs_project,
-                database=fs_database,
-                key_sanitization_strategy=(
-                    FirestoreV1KeySanitizationStrategy()
-                ),
-                collection_sanitization_strategy=(
-                    FirestoreV1CollectionSanitizationStrategy()
-                ),
+            store = (
+                store
+                if store is not None
+                else FirestoreStore(
+                    project=fs_project,
+                    database=fs_database,
+                    key_sanitization_strategy=(
+                        FirestoreV1KeySanitizationStrategy()
+                    ),
+                    collection_sanitization_strategy=(
+                        FirestoreV1CollectionSanitizationStrategy()
+                    ),
+                )
             )
         except DefaultCredentialsError as exc:
             raise ValueError(

@@ -13,16 +13,27 @@ to provide several
 
 ### Tools available
 
-- `search`: Retrieves information about the Google Ads account.
+- `search`: Retrieves information about the Google Ads account using GAQL.
 - `get_resource_metadata`: Retrieves metadata about a Google Ads API resource type, for example "campaign". This is useful to understand the structure of the data and what fields are available for querying.
-- `list_accessible_customers`: Returns ids of customers directly accessible
+- `list_accessible_customers`: Returns IDs of customers directly accessible
   by the user authenticating the call.
+- `create_asset`: Creates Google Ads assets (`TEXT`, `IMAGE`, `YOUTUBE_VIDEO`, `SITELINK`, `CALLOUT`, `STRUCTURED_SNIPPET`, and other asset types via `extra_params`). Note: `image_asset_path` is supported in local `stdio` mode only; use base64 `image_asset_data` for remote HTTP deployments.
+- `upload_video_asset`: Uploads a local video file to YouTube via the Google Ads API using a background task so it can be referenced by video assets (supported in local `stdio` mode only).
+- `manage_labels`: Creates, updates, and removes account labels.
+- `manage_label_associations`: Creates and removes label associations on `CAMPAIGN`, `CUSTOMER`, `AD_GROUP`, and `AD_GROUP_CRITERION` resources.
+
+### Propose & Confirm Safety Workflow (Mutate Tools)
+
+All write/mutate tools (`create_asset`, `upload_video_asset`, `manage_labels`, and `manage_label_associations`) enforce a two-step **Propose & Confirm** safety workflow:
+
+1. **Propose (`validate_only=True`, default)**: Validates the operation (including a Google Ads API `validate_only` dry run where supported) without committing changes, returning human-readable `change_items` and a cryptographic `checksum` bound to the customer ID and parameters.
+2. **Confirm (`validate_only=False`)**: Requires passing the exact same parameters and `customer_id` together with the `checksum` returned in step 1 after explicit user approval. Any missing or mismatched checksum is rejected before mutating the account.
 
 ### Configuring and Namespacing Tools
 
-The Google Ads MCP server uses the `tools_config.yaml` to let you selectively enable or disable individual tools or tool categories (namespaces) and customize their namespace prefixes.
+The Google Ads MCP server uses `tools_config.yaml` to let you selectively enable or disable individual tools or tool categories (namespaces) and customize their namespace prefixes.
 
-A default `tools_config.yaml` with all tools enabled is bundled with the package, so the server works out of the box with no extra setup. To customize your installation, the server resolves the configuration in the following order:
+A default `tools_config.yaml` with all tools enabled is bundled with the package, so the server works out of the box with no extra setup. For strictly read-only deployments, set `labels: false` and `assets: false` in your `tools_config.yaml`. To customize your installation, the server resolves the configuration in the following order:
 
 1. An explicit path set via the `GOOGLE_ADS_MCP_TOOLS_CONFIG` environment variable.
 2. A `tools_config.yaml` file in the current working directory.
@@ -45,6 +56,10 @@ namespaces:
     prefix: "metadata"
     enabled_tools:
       - get_resource_metadata: true
+
+  # Option 4: Disable write/mutate categories for a strictly read-only server
+  labels: false
+  assets: false
 ```
 
 
@@ -66,7 +81,6 @@ namespaces:
 Setup involves the following steps:
 
 1.  Configure Python.
-1.  Configure Developer Token.
 1.  Enable APIs in your project
 1.  Configure Credentials.
 1.  Configure your MCP client.
@@ -75,16 +89,12 @@ Setup involves the following steps:
 
 [Install pipx](https://pipx.pypa.io/stable/#install-pipx).
 
-### Configure Developer Token
+After a version has been published to PyPI, you can run that exact version
+instead of following the latest repository state:
 
-Follow the instructions for [Obtaining a Developer Token](https://developers.google.com/google-ads/api/docs/get-started/dev-token).
-
-Your developer token must have at least [Explorer access](https://developers.google.com/google-ads/api/docs/get-started/dev-token#access-levels) to query production accounts. New tokens may be automatically upgraded to Explorer access; if not, you can apply through the API Center. See the [access levels documentation](https://developers.google.com/google-ads/api/docs/get-started/dev-token#access-levels) for details.
-
-If you see the error *"The developer token is only approved for use with test
-accounts"*, your token does not yet have access to production accounts. See the
-[access levels documentation](https://developers.google.com/google-ads/api/docs/access-levels)
-for how to request the access level you need.
+```shell
+pipx run --spec "google-ads-mcp==X.Y.Z" google-ads-mcp
+```
 
 ### Enable APIs in your project
 
@@ -119,9 +129,79 @@ alongside the server: `pip install py-key-value-aio[redis]` and
 
 Once this is enabled, you can authenticate to the API through your MCP client.
 
-When these variables are set, the server automatically switches to the `streamable-http` transport (SSE/HTTP) instead of `stdio`.
+When these variables are set, the server automatically switches to the
+`streamable-http` transport instead of `stdio`.
 
-You will need to run the server as a separate process and configure your MCP client to connect to the SSE endpoint (e.g., `http://localhost:8080/mcp`).
+You will need to run the server as a separate process and configure your MCP
+client to connect to the Streamable HTTP endpoint (for example,
+`http://localhost:8080/mcp`).
+
+### Local WSL and Podman deployment
+
+This deployment has been tested with rootless Podman in WSL and exposes a single
+Streamable HTTP endpoint at `http://localhost:8080/mcp`. Build the image from
+the repository inside WSL:
+
+```shell
+podman build --tag localhost/google-ads-mcp:latest --file Dockerfile .
+```
+
+Keep server credentials out of MCP client configuration. The tested Quadlet
+loads Google Ads and OAuth settings from a private host-side file through
+`EnvironmentFile=` and uses a separate named volume for persistent encrypted
+OAuth state:
+
+```ini
+[Container]
+Image=localhost/google-ads-mcp:latest
+PublishPort=127.0.0.1:8080:8080
+EnvironmentFile=/absolute/host/path/google-ads-mcp.env
+Volume=google-ads-mcp-oauth.volume:/var/lib/google-ads-mcp:rw
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+```
+
+The environment file and the OAuth-state volume serve different purposes: the
+volume does not contain the `.env` file. Keep the environment file outside the
+repository, restrict it to the service owner, and never commit it. Antigravity
+and Codex then need only the MCP endpoint and their own OAuth authorization;
+they do not need the server's OAuth client secret,
+or signing and storage keys. Publish port 8080 only on the loopback interface
+when the server is intended for local agents.
+
+The endpoint deliberately keeps stateful Streamable HTTP enabled. It supports
+legacy MCP 2025 clients that use `Mcp-Session-Id` and GET SSE as well as MCP
+2026 clients that use sessionless POST requests and `subscriptions/listen`.
+Do not enable FastMCP's `stateless_http` option on this shared endpoint; doing
+so removes the legacy GET channel.
+
+The server runs on FastMCP 4 (`fastmcp>=4.0.6,<5`) paired with `mcp[cli]>=2.0.0,<3`. The Docker build also applies a version-guarded
+OAuth metadata workaround for Codex CLI 0.146. It stops advertising the RFC
+9207 authorization-response `iss` parameter as mandatory while FastMCP still
+includes it in redirects. The build fails if the expected FastMCP major version or
+patch location changes, so upgrades require explicit interoperability tests.
+
+For Codex, configure and authenticate the server as described in the
+[official Codex MCP documentation](https://developers.openai.com/codex/mcp/):
+
+```shell
+codex mcp add google_ads --url http://localhost:8080/mcp
+codex mcp login google_ads
+```
+
+For Antigravity, configure the same URL as `serverUrl` in its MCP configuration.
+This key is required for Streamable HTTP in Antigravity 2.8.1 and Antigravity
+IDE 2.5.5; `httpUrl` is not accepted by those versions. After authentication,
+both clients should list these namespaced tools:
+
+- `assets_create_asset`
+- `assets_upload_video_asset`
+- `customers_list_accessible_customers`
+- `labels_manage_label_associations`
+- `labels_manage_labels`
+- `metadata_get_resource_metadata`
+- `search_search`
 
 #### Option 2: Configure credentials using Application Default Credentials
 
@@ -182,32 +262,42 @@ In the utils.py file, change get_googleads_client() to use the load_from_storage
 Add the server to your MCP client's configuration. Below are examples for
 popular clients.
 
-#### Antigravity CLI / Antigravity Code Assist
+#### Antigravity / Antigravity IDE
 
-1.  Install [Antigravity CLI](https://antigravity.google/product/antigravity-cli) or Antigravity Code Assist.
+1.  Install [Antigravity](https://antigravity.google/product/antigravity-cli)
+    or Antigravity IDE.
 
 1.  Configure your server. Refer to the docs at [https://antigravity.google/docs/mcp](https://antigravity.google/docs/mcp) for details on setting up MCP servers.
 
 - Option 1: Using FastMCP OAuth Proxy (Streamable HTTP)
 
-  You can run the server as a separate process and configure your MCP client to connect to the SSE endpoint (e.g., `http://localhost:8080/mcp`).
+  You can run the server as a separate process and configure your MCP client
+  to connect to the Streamable HTTP endpoint (for example,
+  `http://localhost:8080/mcp`).
   This also allows using FastMCP's [OAuth proxy](https://gofastmcp.com/servers/auth/oauth-proxy) feature for dynamic user authentication.
+
+  Antigravity 2.8.1 and Antigravity IDE 2.5.5 require `serverUrl` for a
+  Streamable HTTP server. Do not use the older `httpUrl` key. Server-side
+  credentials belong in the server process, not in this client configuration.
 
     ```json
     {
       "mcpServers": {
         "google-ads-mcp": {
-          "httpUrl":"http://localhost:8080/mcp",
-          "env": {
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"                        
-          }
+          "serverUrl": "http://localhost:8080/mcp"
         }
       }
     }
     ```
 
 - Option 2: the Application Default Credentials method
+
+    This remains a supported alternative, but it provides less credential
+    isolation than the server-managed Streamable HTTP deployment above. The MCP
+    client starts the server and its configuration contains the ADC file path.
+    Prefer the Quadlet deployment when several
+    local clients share the same server or client configuration may be copied,
+    synchronized, or inspected by other tools.
 
     Replace `PATH_TO_CREDENTIALS_JSON` with the path you copied in the previous
     step.
@@ -230,8 +320,7 @@ popular clients.
           ],
           "env": {
             "GOOGLE_APPLICATION_CREDENTIALS": "PATH_TO_CREDENTIALS_JSON",
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"
+            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
           }
         }
       }
@@ -252,8 +341,7 @@ popular clients.
             "google-ads-mcp"
           ],
           "env": {
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"
+            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
           }
         }
       }
@@ -262,8 +350,11 @@ popular clients.
 
 #### Login Customer Id
 
-If your access to the customer account is through a manager account, you will
-need to add the customer ID of the manager account to the settings file.
+If your access to the customer account is through a manager account, you can
+either provide the manager account's customer ID per tool call via the optional
+`login_customer_id` parameter, or set `GOOGLE_ADS_LOGIN_CUSTOMER_ID` in the
+settings file as a default (the per-call `login_customer_id` parameter takes
+precedence when specified).
 
 See [here](https://developers.google.com/google-ads/api/docs/concepts/call-structure#cid) for details.
 
@@ -283,7 +374,6 @@ The final file will look like this:
         "env": {
           "GOOGLE_APPLICATION_CREDENTIALS": "PATH_TO_CREDENTIALS_JSON",
           "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-          "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN",
           "GOOGLE_ADS_LOGIN_CUSTOMER_ID": "YOUR_MANAGER_CUSTOMER_ID"
         }
       }
@@ -328,7 +418,6 @@ You can use Cloud Build to build and push the image to Artifact Registry without
 Make sure to set the required environment variables:
 
 - `GOOGLE_PROJECT_ID`: Your Google Cloud project ID.
-- `GOOGLE_ADS_DEVELOPER_TOKEN`: The developer token you want the MCP server to use (see above).
 - `GOOGLE_ADS_MCP_OAUTH_CLIENT_ID`: The OAuth Client ID you want the MCP server to use.
 - `GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET`: The OAuth Client secret you want the MCP server to use.
 - `GOOGLE_ADS_MCP_BASE_URL`: The base URL where your MCP server is accessible: this will be automatically assigned by Google Cloud Run after your first deployment. You can update the environment variables after deployment. 
@@ -353,7 +442,7 @@ gcloud run deploy google-ads-mcp \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,GOOGLE_ADS_DEVELOPER_TOKEN=YOUR_DEVELOPER_TOKEN,GOOGLE_ADS_MCP_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET,GOOGLE_ADS_MCP_BASE_URL=YOUR_BASE_URL,GOOGLE_ADS_MCP_JWT_SIGNING_KEY=YOUR_JWT_SIGNING_KEY,GOOGLE_ADS_MCP_STORAGE_TYPE=firestore,FASTMCP_HOST=0.0.0.0"
+  --set-env-vars="GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET,GOOGLE_ADS_MCP_BASE_URL=YOUR_BASE_URL,GOOGLE_ADS_MCP_JWT_SIGNING_KEY=YOUR_JWT_SIGNING_KEY,GOOGLE_ADS_MCP_STORAGE_TYPE=firestore,FASTMCP_HOST=0.0.0.0"
 ```
 
 ### Step 3: Configure MCP Client
@@ -412,3 +501,5 @@ How many active campaigns do I have for customer id 1234567890
 ## Contributing
 
 Contributions welcome! See the [Contributing Guide](CONTRIBUTING.md).
+Project maintainers can find the Trusted Publishing and release procedure in
+the [release guide](docs/releasing.md).

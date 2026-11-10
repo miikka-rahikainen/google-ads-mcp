@@ -103,59 +103,221 @@ class TestUtils(unittest.TestCase):
 
         mock_popen.assert_called_once_with(["mock_cmd"], stdin=subprocess.PIPE)
 
-    @patch("ads_mcp.utils.GoogleAdsClient")
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
-    @patch("ads_mcp.utils._create_credentials")
-    def test_googleads_client_uses_explicit_login_customer_id(
-        self, mock_credentials, _mock_developer_token, mock_client
-    ):
-        """A request-level manager id overrides the deployment default."""
-        credentials = MagicMock()
-        mock_credentials.return_value = credentials
+    def test_clean_customer_id(self):
+        """Tests that clean_customer_id strips non-digit characters from various inputs."""
+        self.assertEqual(utils.clean_customer_id("1234567890"), "1234567890")
+        self.assertEqual(utils.clean_customer_id(1234567890), "1234567890")
+        self.assertEqual(utils.clean_customer_id("123-456-7890"), "1234567890")
+        self.assertEqual(
+            utils.clean_customer_id(" 123-456-7890 "), "1234567890"
+        )
+        self.assertEqual(
+            utils.clean_customer_id("customers/1234567890"), "1234567890"
+        )
+        self.assertEqual(utils.clean_customer_id(""), "")
+
+    def test_get_login_customer_id(self):
+        """Tests that _get_login_customer_id resolves from parameter or env variable and sanitizes."""
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(utils._get_login_customer_id())
+            self.assertEqual(
+                utils._get_login_customer_id("999-888-7777"), "9998887777"
+            )
+            self.assertEqual(
+                utils._get_login_customer_id(9998887777), "9998887777"
+            )
+
+        with patch.dict(
+            os.environ, {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "123-456-7890"}
+        ):
+            self.assertEqual(utils._get_login_customer_id(), "1234567890")
+            # Explicit argument takes precedence over environment variable
+            self.assertEqual(
+                utils._get_login_customer_id("999-888-7777"), "9998887777"
+            )
+
+    def test_get_googleads_client_with_login_customer_id(self):
+        """Tests that _get_googleads_client passes login_customer_id when provided or set in env."""
+        import os
+        from unittest.mock import MagicMock, patch
 
         with patch.dict(
             os.environ,
-            {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "1111111111"},
-            clear=False,
+            {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "111-222-3333"},
+            clear=True,
         ):
-            utils._get_googleads_client(login_customer_id="4741284197")
+            with patch.object(
+                utils, "_create_credentials", return_value=MagicMock()
+            ):
+                with patch("ads_mcp.utils.GoogleAdsClient") as mock_client:
+                    utils._get_googleads_client(
+                        login_customer_id="444-555-6666"
+                    )
+                    mock_client.assert_called_once()
+                    _, kwargs = mock_client.call_args
+                    self.assertEqual(
+                        kwargs.get("login_customer_id"), "4445556666"
+                    )
 
-        mock_client.assert_called_once_with(
-            credentials=credentials,
-            developer_token="dev-token",
-            use_proto_plus=True,
-            login_customer_id="4741284197",
-        )
+    def test_get_googleads_service_passes_login_customer_id(self):
+        """Tests that get_googleads_service forwards login_customer_id to _get_googleads_client."""
+        from unittest.mock import MagicMock, patch
 
-    @patch("ads_mcp.utils.GoogleAdsClient")
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
-    @patch("ads_mcp.utils._create_credentials")
-    def test_googleads_client_falls_back_to_environment_login_customer_id(
-        self, mock_credentials, _mock_developer_token, mock_client
-    ):
-        """The environment setting remains supported when no override is supplied."""
-        credentials = MagicMock()
-        mock_credentials.return_value = credentials
+        with patch.object(
+            utils, "_get_googleads_client", return_value=MagicMock()
+        ) as mock_get_client:
+            utils.get_googleads_service(
+                "GoogleAdsService", login_customer_id="123-456-7890"
+            )
+            mock_get_client.assert_called_once_with(
+                login_customer_id="123-456-7890"
+            )
+
+    def test_get_developer_token(self):
+        """Tests that _get_developer_token returns env variable or None if unset."""
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(utils._get_developer_token())
+
+        with patch.dict(
+            os.environ, {"GOOGLE_ADS_DEVELOPER_TOKEN": "test-dev-token"}
+        ):
+            self.assertEqual(utils._get_developer_token(), "test-dev-token")
+
+    def test_get_googleads_client_without_developer_token(self):
+        """Tests that _get_googleads_client succeeds without developer_token when unset."""
+        import os
+        from unittest.mock import MagicMock, patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(
+                utils, "_create_credentials", return_value=MagicMock()
+            ):
+                with patch("ads_mcp.utils.GoogleAdsClient") as mock_client:
+                    utils._get_googleads_client()
+                    mock_client.assert_called_once()
+                    _, kwargs = mock_client.call_args
+                    self.assertNotIn("developer_token", kwargs)
+
+    def test_get_googleads_client_with_developer_token(self):
+        """Tests that _get_googleads_client passes developer_token when set."""
+        import os
+        from unittest.mock import MagicMock, patch
 
         with patch.dict(
             os.environ,
-            {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "2524599092"},
-            clear=False,
+            {"GOOGLE_ADS_DEVELOPER_TOKEN": "test-dev-token"},
+            clear=True,
         ):
-            utils._get_googleads_client()
+            with patch.object(
+                utils, "_create_credentials", return_value=MagicMock()
+            ):
+                with patch("ads_mcp.utils.GoogleAdsClient") as mock_client:
+                    utils._get_googleads_client()
+                    mock_client.assert_called_once()
+                    _, kwargs = mock_client.call_args
+                    self.assertEqual(
+                        kwargs.get("developer_token"), "test-dev-token"
+                    )
 
-        mock_client.assert_called_once_with(
-            credentials=credentials,
-            developer_token="dev-token",
-            use_proto_plus=True,
-            login_customer_id="2524599092",
+    def test_get_googleads_client_instantiation_without_developer_token(self):
+        """Tests that _get_googleads_client successfully instantiates GoogleAdsClient when dev token is unset."""
+        import os
+        from unittest.mock import patch
+        from google.auth.credentials import AnonymousCredentials
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(
+                utils,
+                "_create_credentials",
+                return_value=AnonymousCredentials(),
+            ):
+                client = utils._get_googleads_client()
+                self.assertIsNone(client.developer_token)
+
+    def test_extract_id(self):
+        """Tests that extract_id extracts the trailing segment from resource names."""
+        self.assertEqual(
+            utils.extract_id("customers/1234567890/assets/456"), "456"
+        )
+        self.assertEqual(
+            utils.extract_id("customers/1234567890/campaignLabels/456~789"),
+            "456~789",
+        )
+        self.assertEqual(utils.extract_id(""), "")
+
+    def test_is_remote_oauth_mode(self):
+        """Tests remote OAuth mode detection based on OAuth client env vars."""
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(utils.is_remote_oauth_mode())
+
+        with patch.dict(
+            os.environ,
+            {"GOOGLE_ADS_MCP_OAUTH_CLIENT_ID": "only-id"},
+            clear=True,
+        ):
+            self.assertFalse(utils.is_remote_oauth_mode())
+
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_ADS_MCP_OAUTH_CLIENT_ID": "cid",
+                "GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET": "csecret",
+            },
+            clear=True,
+        ):
+            self.assertTrue(utils.is_remote_oauth_mode())
+
+    def test_format_google_ads_error(self):
+        """Tests formatting of GoogleAdsException into readable error messages."""
+        from unittest.mock import MagicMock
+        from google.ads.googleads.errors import GoogleAdsException
+        from google.ads.googleads.v25.errors.types.errors import (
+            ErrorCode,
+            GoogleAdsError,
+            GoogleAdsFailure,
+        )
+        from google.ads.googleads.v25.errors.types.request_error import (
+            RequestErrorEnum,
         )
 
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
-    @patch("ads_mcp.utils._create_credentials")
-    def test_googleads_client_rejects_invalid_login_customer_id(
-        self, _mock_credentials, _mock_developer_token
-    ):
-        """Manager ids must be sent without punctuation."""
-        with self.assertRaisesRegex(ValueError, "digits only"):
-            utils._get_googleads_client(login_customer_id="474-128-4197")
+        failure = GoogleAdsFailure(
+            errors=[
+                GoogleAdsError(
+                    error_code=ErrorCode(
+                        request_error=RequestErrorEnum.RequestError.UNKNOWN
+                    ),
+                    message="Something went wrong.",
+                )
+            ]
+        )
+        ex = GoogleAdsException(
+            error=MagicMock(),
+            call=MagicMock(),
+            failure=type(failure).pb(failure),
+            request_id="req-999",
+        )
+        formatted = utils.format_google_ads_error(ex)
+        self.assertIn("Request ID: req-999", formatted)
+        self.assertIn("Something went wrong.", formatted)
+
+    def test_get_googleads_service_from_client_attaches_interceptor(self):
+        """Tests that get_googleads_service_from_client attaches MCPHeaderInterceptor."""
+        from unittest.mock import MagicMock
+        from ads_mcp.mcp_header_interceptor import MCPHeaderInterceptor
+
+        mock_client = MagicMock()
+        utils.get_googleads_service_from_client(mock_client, "AssetService")
+        mock_client.get_service.assert_called_once()
+        args, kwargs = mock_client.get_service.call_args
+        self.assertEqual(args[0], "AssetService")
+        self.assertEqual(len(kwargs["interceptors"]), 1)
+        self.assertIsInstance(kwargs["interceptors"][0], MCPHeaderInterceptor)

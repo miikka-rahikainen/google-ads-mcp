@@ -30,19 +30,43 @@ from ads_mcp.resources import (
 
 
 import os
+from starlette.responses import JSONResponse
+from ads_mcp.hosted_config import is_hosted, validate_hosted_configuration
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request):
+    """Liveness only; no account or credential information."""
+    return JSONResponse({"status": "ok"})
 
 
 def run_server() -> None:
+    validate_hosted_configuration()
     _CLIENT_ID = os.environ.get("GOOGLE_ADS_MCP_OAUTH_CLIENT_ID")
     _CLIENT_SECRET = os.environ.get("GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET")
     port = int(os.environ.get("PORT", "8080"))
 
-    if _CLIENT_ID and _CLIENT_SECRET:
+    if is_hosted() or (_CLIENT_ID and _CLIENT_SECRET):
         mcp.run(
             transport="streamable-http",
             port=port,
             host="0.0.0.0",
-            uvicorn_config={"access_log": False},
+            stateless_http=True,
+            json_response=True,
+            show_banner=False,
+            path="/mcp",
+            host_origin_protection=True,
+            allowed_hosts=[
+                "google-ads-mcp.dagmar.app",
+                os.environ.get("GOOGLE_ADS_MCP_HTTP_HOST", "localhost"),
+            ],
+            allowed_origins=["https://google-ads-mcp.dagmar.app"],
+            uvicorn_config={
+                "access_log": False,
+                "timeout_graceful_shutdown": 8,
+                "timeout_keep_alive": 5,
+                "proxy_headers": False,
+            },
         )
     else:
         mcp.run()
