@@ -26,6 +26,10 @@ mappings are rejected. Both the original `google-ads-mcp` Firestore database and
 Coolify FileTree remain untouched. Keep the existing service account and Secret
 Manager version references, and do not rotate keys. Hosted validation is tied
 to this approved fresh database and the unchanged canonical OAuth issuer.
+The obsolete developer token is neither read nor passed to the Ads client.
+Remove only its `GOOGLE_ADS_DEVELOPER_TOKEN` Cloud Run secret binding atomically
+with deployment of this updated image. Preserve the underlying Secret Manager
+resource and all other OAuth/storage secret references.
 
 Only `customers_list_accessible_customers`, `search_search`, and
 `metadata_get_resource_metadata` can be mounted. New upstream mutation modules

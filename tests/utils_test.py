@@ -176,19 +176,6 @@ class TestUtils(unittest.TestCase):
                 login_customer_id="123-456-7890"
             )
 
-    def test_get_developer_token(self):
-        """Tests that _get_developer_token returns env variable or None if unset."""
-        import os
-        from unittest.mock import patch
-
-        with patch.dict(os.environ, {}, clear=True):
-            self.assertIsNone(utils._get_developer_token())
-
-        with patch.dict(
-            os.environ, {"GOOGLE_ADS_DEVELOPER_TOKEN": "test-dev-token"}
-        ):
-            self.assertEqual(utils._get_developer_token(), "test-dev-token")
-
     def test_get_googleads_client_without_developer_token(self):
         """Tests that _get_googleads_client succeeds without developer_token when unset."""
         import os
@@ -204,8 +191,8 @@ class TestUtils(unittest.TestCase):
                     _, kwargs = mock_client.call_args
                     self.assertNotIn("developer_token", kwargs)
 
-    def test_get_googleads_client_with_developer_token(self):
-        """Tests that _get_googleads_client passes developer_token when set."""
+    def test_get_googleads_client_ignores_stale_developer_token(self):
+        """A leftover obsolete environment value cannot enter new clients."""
         import os
         from unittest.mock import MagicMock, patch
 
@@ -221,9 +208,7 @@ class TestUtils(unittest.TestCase):
                     utils._get_googleads_client()
                     mock_client.assert_called_once()
                     _, kwargs = mock_client.call_args
-                    self.assertEqual(
-                        kwargs.get("developer_token"), "test-dev-token"
-                    )
+                    self.assertNotIn("developer_token", kwargs)
 
     def test_get_googleads_client_instantiation_without_developer_token(self):
         """Tests that _get_googleads_client successfully instantiates GoogleAdsClient when dev token is unset."""

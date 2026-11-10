@@ -129,7 +129,6 @@ class HostedSafetyTest(unittest.IsolatedAsyncioTestCase):
             "GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET": "synthetic-secret",
             "GOOGLE_ADS_MCP_JWT_SIGNING_KEY": "synthetic-signing-key",
             "GOOGLE_ADS_MCP_STORAGE_ENCRYPTION_KEY": "synthetic-encryption-key",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "synthetic-developer-token",
             "GOOGLE_ADS_MCP_BASE_URL": "https://google-ads-mcp.dagmar.app",
             "GOOGLE_ADS_MCP_HTTP_HOST": "google-ads-mcp-fryvh6hjxq-lz.a.run.app",
             "GOOGLE_ADS_MCP_STORAGE_TYPE": "firestore",
@@ -139,6 +138,11 @@ class HostedSafetyTest(unittest.IsolatedAsyncioTestCase):
         }
         with patch.dict("os.environ", env, clear=True):
             validate_hosted_configuration()
+            with patch.dict(
+                "os.environ", {"GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET": ""}
+            ):
+                with self.assertRaises(ValueError):
+                    validate_hosted_configuration()
             with patch.dict(
                 "os.environ",
                 {"GOOGLE_ADS_MCP_STORAGE_FIRESTORE_DATABASE": "google-ads-mcp"},

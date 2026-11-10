@@ -30,7 +30,6 @@ def validate_hosted_configuration() -> None:
         "GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET",
         "GOOGLE_ADS_MCP_JWT_SIGNING_KEY",
         "GOOGLE_ADS_MCP_STORAGE_ENCRYPTION_KEY",
-        "GOOGLE_ADS_DEVELOPER_TOKEN",
         "GOOGLE_ADS_MCP_HTTP_HOST",
     )
     if any(not os.environ.get(key, "").strip() for key in required):
