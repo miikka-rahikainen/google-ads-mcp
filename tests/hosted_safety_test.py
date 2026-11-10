@@ -25,6 +25,33 @@ from ads_mcp.legacy_firestore import (
 
 
 class HostedSafetyTest(unittest.IsolatedAsyncioTestCase):
+    async def test_old_signed_token_without_backing_mapping_is_rejected(self):
+        from ads_mcp.domain_restriction import DomainRestrictedGoogleProvider
+
+        provider = DomainRestrictedGoogleProvider(
+            allowed_domains=("dagmar.fi",),
+            client_id="synthetic-client",
+            client_secret="synthetic-secret",
+            base_url="https://google-ads-mcp.dagmar.app",
+            jwt_signing_key="synthetic-signing-key-with-sufficient-material",
+            client_storage=MemoryStore(),
+        )
+        provider.get_routes(mcp_path="/mcp")
+        token = provider.jwt_issuer.issue_access_token(
+            client_id="previous-synthetic-client",
+            scopes=["openid"],
+            jti="previous-synthetic-session",
+        )
+        self.assertEqual(
+            provider.jwt_issuer.verify_token(token)["jti"],
+            "previous-synthetic-session",
+        )
+        with patch.object(
+            provider._token_validator, "verify_token", new_callable=AsyncMock
+        ) as upstream:
+            self.assertIsNone(await provider.load_access_token(token))
+            upstream.assert_not_called()
+
     async def test_oauth_discovery_preserves_live_issuer_and_pkce(self):
         from ads_mcp.domain_restriction import DomainRestrictedGoogleProvider
         from starlette.testclient import TestClient
@@ -94,6 +121,30 @@ class HostedSafetyTest(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(ValueError):
                 validate_hosted_configuration()
+
+    async def test_hosted_accepts_only_approved_fresh_cutover_database(self):
+        env = {
+            "GOOGLE_ADS_MCP_MODE": "hosted",
+            "GOOGLE_ADS_MCP_OAUTH_CLIENT_ID": "synthetic-client",
+            "GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET": "synthetic-secret",
+            "GOOGLE_ADS_MCP_JWT_SIGNING_KEY": "synthetic-signing-key",
+            "GOOGLE_ADS_MCP_STORAGE_ENCRYPTION_KEY": "synthetic-encryption-key",
+            "GOOGLE_ADS_DEVELOPER_TOKEN": "synthetic-developer-token",
+            "GOOGLE_ADS_MCP_BASE_URL": "https://google-ads-mcp.dagmar.app",
+            "GOOGLE_ADS_MCP_HTTP_HOST": "google-ads-mcp-fryvh6hjxq-lz.a.run.app",
+            "GOOGLE_ADS_MCP_STORAGE_TYPE": "firestore",
+            "GOOGLE_ADS_MCP_STORAGE_FIRESTORE_PROJECT": "dagmar-mcp",
+            "GOOGLE_ADS_MCP_STORAGE_FIRESTORE_DATABASE": "google-ads-mcp-cutover-north1-20261110",
+            "GOOGLE_ADS_MCP_STORAGE_LEGACY_PROFILE": "filetree-passthrough",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            validate_hosted_configuration()
+            with patch.dict(
+                "os.environ",
+                {"GOOGLE_ADS_MCP_STORAGE_FIRESTORE_DATABASE": "google-ads-mcp"},
+            ):
+                with self.assertRaises(ValueError):
+                    validate_hosted_configuration()
 
     async def test_legacy_encryption_uses_existing_key_precedence_and_salt(
         self,

@@ -16,12 +16,16 @@ without dependency resolution. The source upload excludes everything except
 the explicit build inputs, so local credentials, account data, checkouts, and
 test artifacts cannot enter the image.
 
-The recovered hosted configuration and legacy Firestore adapter preserve the
-existing database, collection/key identities, TTLs, encryption salt, and key
-precedence. Keep the existing service account, environment and Secret Manager
-version references. Do not rotate keys, replace the database, or run a second
-data migration as part of this application update. The adapter is deliberately
-tied to the approved production database and canonical OAuth issuer.
+The recovered legacy Firestore adapter preserves collection/key identities,
+TTLs, encryption salt, and key precedence. The final cutover deliberately uses
+the new Native database `google-ads-mcp-cutover-north1-20261110` in `europe-north1`
+because current Coolify sessions have changed since the earlier Cloud snapshot.
+Existing sessions must reconnect once. No records from the old stores are copied
+into the fresh database; old signed reference tokens without backing session
+mappings are rejected. Both the original `google-ads-mcp` Firestore database and
+Coolify FileTree remain untouched. Keep the existing service account and Secret
+Manager version references, and do not rotate keys. Hosted validation is tied
+to this approved fresh database and the unchanged canonical OAuth issuer.
 
 Only `customers_list_accessible_customers`, `search_search`, and
 `metadata_get_resource_metadata` can be mounted. New upstream mutation modules
@@ -70,14 +74,18 @@ Confirm the discovery issuer still names the canonical hostname.
 Do not exercise OAuth writes against the shared database during this stage.
 Cloud Run invocation IAM must permit intended external MCP clients before
 public cutover; application OAuth and Workspace restriction must remain active.
+Before making invocation public, remove every traffic tag pointing at a revision
+configured with the stale original database. Retain those revisions unrouted.
+The final service route must send 100% to the reviewed fresh-database revision,
+with no publicly reachable stale-database candidate tag.
 
 ## Cutover gates and rollback
 
-Before sending public traffic, establish whether Coolify's current OAuth state
-has changed since the existing Firestore migration. Inspect migration metadata
-and aggregate freshness/counts privately. A successful application test alone
-does not establish session continuity. Reconcile any state gap with a reviewed
-migration procedure before changing DNS; never overwrite current state blindly.
+Coolify FileTree freshness was confirmed to be later than the existing Cloud
+snapshot. The approved cutover avoids stale sessions by starting fresh, with
+one reconnect for existing users. Do not import the stale Cloud session snapshot
+or claim session continuity. Restore the stable Cloud Run HTTP hostname and set
+the approved fresh Firestore database when deploying the final reviewed image.
 
 Keep the canonical hostname and OAuth redirect registration unchanged. Configure
 Cloud Run custom-domain routing and its certificate, then apply the exact DNS
@@ -89,15 +97,20 @@ state. Stop or route OAuth writes during the controlled cutover interval.
 Verify public TLS, canonical discovery, rejected
 unauthenticated `/mcp`, a fresh allowed Workspace OAuth login, rejection of an
 outside account, and the exact three-tool authenticated inventory. Check an
-existing session and a synthetic read-only Ads request with per-request MCC.
+existing session is rejected and requires reconnecting, then confirm the fresh
+session succeeds and a synthetic read-only Ads request supports per-request MCC.
 Record evidence without tokens, queries, account data, or production logs.
 
 Only after the above gates pass should traffic move to the reviewed revision.
 Record the prior revision and DNS values first. Roll back by restoring traffic
-to the recorded prior Cloud Run revision and, if needed, the original DNS
-records. A return to FileTree after Firestore writes requires a reviewed
-reverse-sync export or an explicit acceptance that affected users reconnect.
-DNS rollback alone does not restore new sessions to the old server.
+to a reviewed compatible application image configured against the fresh cutover
+database. Do not automatically restore original revisions `00002` through
+`00005`, which use the stale original database. Returning DNS to preserved
+Coolify requires state and revocation reconciliation, or an explicitly reviewed
+new authentication epoch with reconnects; accepting reconnects alone does not
+prevent old preserved sessions from becoming valid again. A return to FileTree
+after fresh Firestore writes requires a reviewed reverse-sync/revocation
+procedure. DNS rollback alone cannot preserve the cutover security boundary.
 Keep the same OAuth secrets and storage adapter during rollback.
 Do not delete the prior revision, Coolify deployment, or OAuth data until the
 user has accepted the completed migration.

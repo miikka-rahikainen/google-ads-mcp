@@ -42,7 +42,7 @@ def validate_hosted_configuration() -> None:
         or os.environ.get("GOOGLE_ADS_MCP_STORAGE_FIRESTORE_PROJECT")
         != "dagmar-mcp"
         or os.environ.get("GOOGLE_ADS_MCP_STORAGE_FIRESTORE_DATABASE")
-        != "google-ads-mcp"
+        != "google-ads-mcp-cutover-north1-20261110"
         or os.environ.get("GOOGLE_ADS_MCP_STORAGE_LEGACY_PROFILE")
         != "filetree-passthrough"
         or os.environ.get(
