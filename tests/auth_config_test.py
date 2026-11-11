@@ -14,6 +14,7 @@
 
 """Unit tests for authentication configuration and storage setup."""
 
+import asyncio
 import os
 import pathlib
 import shutil
@@ -109,6 +110,43 @@ class TestAuthConfig(unittest.TestCase):
         store = create_client_storage()
         self.assertIsInstance(store, FernetEncryptionWrapper)
         self.assertIsInstance(store.key_value, FileTreeStore)
+
+    def test_filetree_reads_existing_encrypted_passthrough_url_record(self):
+        from cryptography.fernet import Fernet
+        from fastmcp.server.auth.oauth_proxy.proxy import derive_jwt_key
+
+        path = pathlib.Path(self.temp_dir, "legacy_filetree")
+        key = "https://example.com/oauth/client"
+        collection = "mcp-oauth-proxy-clients"
+        secret = "synthetic-existing-storage-key"
+        value = {"client_id": key, "synthetic": True}
+        os.environ["GOOGLE_ADS_MCP_STORAGE_TYPE"] = "filetree"
+        os.environ["GOOGLE_ADS_MCP_STORAGE_PATH"] = str(path)
+        os.environ["GOOGLE_ADS_MCP_STORAGE_ENCRYPTION_KEY"] = secret
+
+        old = FernetEncryptionWrapper(
+            key_value=FileTreeStore(data_directory=path),
+            fernet=Fernet(
+                derive_jwt_key(
+                    high_entropy_material=secret,
+                    salt="fastmcp-storage-encryption-key",
+                )
+            ),
+        )
+
+        async def verify_existing_record():
+            # Existing installations use the literal normalized FileTree path.
+            legacy_record = path / collection / f"{key}.json"
+            legacy_record.parent.mkdir(parents=True)
+            await old.put(key, value, collection=collection)
+            self.assertTrue(legacy_record.is_file())
+            self.assertNotIn(b"synthetic", legacy_record.read_bytes())
+            candidate = create_client_storage()
+            self.assertEqual(
+                await candidate.get(key, collection=collection), value
+            )
+
+        asyncio.run(verify_existing_record())
 
     def test_create_client_storage_filetree_missing_path_raises(self):
         """Tests that filetree storage without a path raises ValueError."""

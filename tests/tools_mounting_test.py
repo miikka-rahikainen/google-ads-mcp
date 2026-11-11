@@ -34,6 +34,8 @@ class TestToolsMounting(unittest.IsolatedAsyncioTestCase):
                     "customers": True,
                     "search": True,
                     "metadata": True,
+                    "labels": True,
+                    "assets": True,
                 }
             }
         )
@@ -44,13 +46,16 @@ class TestToolsMounting(unittest.IsolatedAsyncioTestCase):
         tools = await parent.list_tools()
         tool_names = [t.name for t in tools]
 
-        # Expected tools with default prefixes
         self.assertCountEqual(
             tool_names,
             [
                 "customers_list_accessible_customers",
                 "search_search",
                 "metadata_get_resource_metadata",
+                "labels_manage_labels",
+                "labels_manage_label_associations",
+                "assets_create_asset",
+                "assets_upload_video_asset",
             ],
         )
 
@@ -129,3 +134,26 @@ class TestToolsMounting(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("accounts_list_accessible_customers", tool_names)
         self.assertIn("search_search", tool_names)
+
+    @patch("importlib.import_module")
+    @patch("pkgutil.iter_modules")
+    def test_conflicting_fastmcp_instances_raise_value_error(
+        self, mock_iter_modules, mock_import_module
+    ):
+        """Tests that two distinct FastMCP instances with the same category name raise ValueError."""
+        from types import SimpleNamespace
+
+        mock_iter_modules.return_value = [
+            (None, "create_asset", False),
+            (None, "upload_video", False),
+        ]
+        mock_import_module.side_effect = [
+            SimpleNamespace(mcp_a=FastMCP("assets")),
+            SimpleNamespace(mcp_b=FastMCP("assets")),
+        ]
+
+        parent = FastMCP("Test Parent")
+        with self.assertRaisesRegex(
+            ValueError, "Conflicting FastMCP sub-servers"
+        ):
+            initialize_and_mount_tools(parent)

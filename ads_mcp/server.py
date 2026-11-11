@@ -14,6 +14,8 @@
 
 """Entry point for the MCP server."""
 
+import os
+
 from ads_mcp.coordinator import mcp
 
 # The following imports are necessary to register the resources with the `mcp`
@@ -27,9 +29,6 @@ from ads_mcp.resources import (
     release_notes,
     segments,
 )  # noqa: F401
-
-
-import os
 
 
 def run_server() -> None:

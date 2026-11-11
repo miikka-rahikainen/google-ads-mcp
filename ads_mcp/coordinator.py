@@ -22,6 +22,9 @@ of the server.
 import os
 from typing import Any
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+from mcp import types as mcp_types
+from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler
 from ads_mcp.auth_storage import create_client_storage
 from ads_mcp.domain_restriction import (
     DomainRestrictedGoogleProvider,
@@ -58,31 +61,90 @@ if _CLIENT_ID and _CLIENT_SECRET:
 else:
     mcp = FastMCP("Google Ads Server")
 
+mcp.add_extension(TasksExtension())
+
+
+def ensure_subscriptions_listen(server: FastMCP) -> bool:
+    """Register the MCP 2026 subscription stream when FastMCP omits it.
+
+    FastMCP 4 (including 4.0.3) builds its low-level ``Server`` without the SDK's
+    ``on_subscriptions_listen`` handler. Some modern clients open that stream
+    while loading tools; without it, the SDK returns HTTP 404 / method not
+    found, which mcp-go reports misleadingly as a missing session.
+
+    The guard preserves a native FastMCP implementation once one is shipped.
+
+    Returns:
+        True when the compatibility handler was installed, otherwise False.
+    """
+    low_level_server = server._mcp_server
+    if "subscriptions/listen" in low_level_server._request_handlers:
+        return False
+
+    subscription_bus = InMemorySubscriptionBus()
+    low_level_server.add_request_handler(
+        "subscriptions/listen",
+        mcp_types.SubscriptionsListenRequestParams,
+        ListenHandler(subscription_bus),
+    )
+    return True
+
+
+ensure_subscriptions_listen(mcp)
+
 
 def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
     """Loads the tools configuration and dynamically mounts the tools sub-servers."""
     from ads_mcp.config import ToolsConfig
     import importlib
+    import pkgutil
+    import ads_mcp.tools as tools_pkg
+
+    # Map of category name -> FastMCP sub-server
+    sub_servers = {}
+
+    approved_modules = {
+        "core",
+        "search",
+        "get_resource_metadata",
+        "labels",
+        "create_asset",
+        "upload_video",
+    }
+    approved_tools = {
+        "customers": {"list_accessible_customers"},
+        "search": {"search"},
+        "metadata": {"get_resource_metadata"},
+        "labels": {"manage_labels", "manage_label_associations"},
+        "assets": {"create_asset", "upload_video_asset"},
+    }
+
+    # Load only the tool modules approved for this release.
+    for _, module_name, _ in pkgutil.iter_modules(tools_pkg.__path__):
+        if module_name not in approved_modules:
+            continue
+        full_module_name = f"ads_mcp.tools.{module_name}"
+        module = importlib.import_module(full_module_name)
+
+        # Find any FastMCP instances defined in the module
+        for attr_name in dir(module):
+            attr_val = getattr(module, attr_name)
+            if isinstance(attr_val, FastMCP):
+                category = attr_val.name
+                if (
+                    category in sub_servers
+                    and sub_servers[category] is not attr_val
+                ):
+                    raise ValueError(
+                        f"Conflicting FastMCP sub-servers registered for category '{category}'."
+                    )
+                sub_servers[category] = attr_val
 
     config = ToolsConfig.load()
-    approved_tools = (
-        ("customers", "core", "customers_mcp", "list_accessible_customers"),
-        (
-            "metadata",
-            "get_resource_metadata",
-            "metadata_mcp",
-            "get_resource_metadata",
-        ),
-        ("search", "search", "search_mcp", "search"),
-    )
-    for category, module_name, server_name, approved_name in approved_tools:
+
+    for category, sub_mcp in sub_servers.items():
         if not config.is_namespace_enabled(category):
             continue
-        if not config.is_tool_enabled(category, approved_name):
-            continue
-
-        module = importlib.import_module(f"ads_mcp.tools.{module_name}")
-        sub_mcp = getattr(module, server_name)
 
         # Filter disabled tools inside the sub-server before mounting
         tool_names = []
@@ -91,7 +153,9 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
                 tool_names.append(val.name)
 
         for name in tool_names:
-            if name != approved_name:
+            if name not in approved_tools.get(
+                category, set()
+            ) or not config.is_tool_enabled(category, name):
                 sub_mcp.local_provider.remove_tool(name)
 
         # Determine prefix/namespace

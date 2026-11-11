@@ -28,13 +28,13 @@ from fastmcp.exceptions import ToolError
 
 
 def search(
-    customer_id: str,
+    customer_id: str | int,
     fields: List[str],
     resource: str,
     conditions: List[str] = [],
     orderings: List[str] = [],
     limit: int | None = None,
-    login_customer_id: str | None = None,
+    login_customer_id: str | int | None = None,
 ) -> List[Dict[str, Any]]:
     """Fetches data from the Google Ads API using the search method
 
@@ -45,15 +45,16 @@ def search(
         conditions: List of conditions to filter the data, combined using AND clauses
         orderings: How the data is ordered
         limit: The maximum number of rows to return
-        login_customer_id: Optional manager account id through which the
-            authenticated user accesses customer_id
+        login_customer_id: Optional manager customer ID to use as the login-customer-id header.
 
     """
+
+    customer_id = utils.clean_customer_id(customer_id)
 
     try:
         pii_filter.validate_resource_name(resource)
     except ValueError as ex:
-        raise ToolError(str(ex))
+        raise ToolError(str(ex)) from ex
 
     query_parts = [f"SELECT {','.join(fields)} FROM {resource}"]
 
@@ -69,12 +70,8 @@ def search(
     query_parts.append(" PARAMETERS omit_unselected_resource_names=true")
 
     query = "".join(query_parts)
-
     blocked = pii_filter.find_blocked_references(query)
     if blocked:
-        utils.logger.warning(
-            f"ads_mcp.search blocked query referencing {', '.join(blocked)}"
-        )
         raise ToolError(
             "The query references resources or fields that are blocked because "
             f"they can contain personal data: {', '.join(blocked)}"
@@ -97,13 +94,7 @@ def search(
                 )
         return final_output
     except GoogleAdsException as ex:
-        error_msgs = [
-            f"Google Ads API Error: {error.message}"
-            for error in ex.failure.errors
-        ]
-        raise ToolError(
-            f"Request ID: {ex.request_id}\n" + "\n".join(error_msgs)
-        )
+        raise ToolError(utils.format_google_ads_error(ex)) from ex
 
 
 def _search_tool_description() -> str:

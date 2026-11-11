@@ -16,16 +16,19 @@
 
 from typing import Any, Dict
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 import ads_mcp.utils as utils
 from ads_mcp import pii_filter
-from fastmcp.exceptions import ToolError
 
 metadata_mcp = FastMCP("metadata")
 
 
 @metadata_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-def get_resource_metadata(resource_name: str) -> Dict[str, Any]:
+def get_resource_metadata(
+    resource_name: str,
+    login_customer_id: str | int | None = None,
+) -> Dict[str, Any]:
     """Retrieves the selectable, filterable, and sortable fields for a specific Google Ads resource,
     including compatible metrics and segments.
 
@@ -41,13 +44,16 @@ def get_resource_metadata(resource_name: str) -> Dict[str, Any]:
 
     Args:
         resource_name: The name of the Google Ads resource (e.g., 'campaign', 'ad_group').
+        login_customer_id: Optional manager customer ID to use as the login-customer-id header.
     """
     try:
         pii_filter.validate_resource_name(resource_name)
     except ValueError as ex:
-        raise ToolError(str(ex))
+        raise ToolError(str(ex)) from ex
 
-    ga_service = utils.get_googleads_service("GoogleAdsFieldService")
+    ga_service = utils.get_googleads_service(
+        "GoogleAdsFieldService", login_customer_id=login_customer_id
+    )
     request = utils.get_googleads_type("SearchGoogleAdsFieldsRequest")
 
     selectable = set()
