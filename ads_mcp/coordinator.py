@@ -63,29 +63,26 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
     """Loads the tools configuration and dynamically mounts the tools sub-servers."""
     from ads_mcp.config import ToolsConfig
     import importlib
-    import pkgutil
-    import ads_mcp.tools as tools_pkg
-
-    # Map of category name -> FastMCP sub-server
-    sub_servers = {}
-
-    # Discover and dynamically load all tool modules
-    for _, module_name, _ in pkgutil.iter_modules(tools_pkg.__path__):
-        full_module_name = f"ads_mcp.tools.{module_name}"
-        module = importlib.import_module(full_module_name)
-
-        # Find any FastMCP instances defined in the module
-        for attr_name in dir(module):
-            attr_val = getattr(module, attr_name)
-            if isinstance(attr_val, FastMCP):
-                category = attr_val.name
-                sub_servers[category] = attr_val
 
     config = ToolsConfig.load()
-
-    for category, sub_mcp in sub_servers.items():
+    approved_tools = (
+        ("customers", "core", "customers_mcp", "list_accessible_customers"),
+        (
+            "metadata",
+            "get_resource_metadata",
+            "metadata_mcp",
+            "get_resource_metadata",
+        ),
+        ("search", "search", "search_mcp", "search"),
+    )
+    for category, module_name, server_name, approved_name in approved_tools:
         if not config.is_namespace_enabled(category):
             continue
+        if not config.is_tool_enabled(category, approved_name):
+            continue
+
+        module = importlib.import_module(f"ads_mcp.tools.{module_name}")
+        sub_mcp = getattr(module, server_name)
 
         # Filter disabled tools inside the sub-server before mounting
         tool_names = []
@@ -94,7 +91,7 @@ def initialize_and_mount_tools(parent_mcp: FastMCP) -> None:
                 tool_names.append(val.name)
 
         for name in tool_names:
-            if not config.is_tool_enabled(category, name):
+            if name != approved_name:
                 sub_mcp.local_provider.remove_tool(name)
 
         # Determine prefix/namespace

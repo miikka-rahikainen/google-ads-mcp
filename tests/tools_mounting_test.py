@@ -45,9 +45,14 @@ class TestToolsMounting(unittest.IsolatedAsyncioTestCase):
         tool_names = [t.name for t in tools]
 
         # Expected tools with default prefixes
-        self.assertIn("customers_list_accessible_customers", tool_names)
-        self.assertIn("search_search", tool_names)
-        self.assertIn("metadata_get_resource_metadata", tool_names)
+        self.assertCountEqual(
+            tool_names,
+            [
+                "customers_list_accessible_customers",
+                "search_search",
+                "metadata_get_resource_metadata",
+            ],
+        )
 
     @patch("ads_mcp.config.ToolsConfig.load")
     async def test_mounting_disabled_namespaces(self, mock_load):

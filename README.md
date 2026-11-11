@@ -66,7 +66,6 @@ namespaces:
 Setup involves the following steps:
 
 1.  Configure Python.
-1.  Configure Developer Token.
 1.  Enable APIs in your project
 1.  Configure Credentials.
 1.  Configure your MCP client.
@@ -74,17 +73,6 @@ Setup involves the following steps:
 ### Configure Python
 
 [Install pipx](https://pipx.pypa.io/stable/#install-pipx).
-
-### Configure Developer Token
-
-Follow the instructions for [Obtaining a Developer Token](https://developers.google.com/google-ads/api/docs/get-started/dev-token).
-
-Your developer token must have at least [Explorer access](https://developers.google.com/google-ads/api/docs/get-started/dev-token#access-levels) to query production accounts. New tokens may be automatically upgraded to Explorer access; if not, you can apply through the API Center. See the [access levels documentation](https://developers.google.com/google-ads/api/docs/get-started/dev-token#access-levels) for details.
-
-If you see the error *"The developer token is only approved for use with test
-accounts"*, your token does not yet have access to production accounts. See the
-[access levels documentation](https://developers.google.com/google-ads/api/docs/access-levels)
-for how to request the access level you need.
 
 ### Enable APIs in your project
 
@@ -199,8 +187,7 @@ popular clients.
         "google-ads-mcp": {
           "httpUrl":"http://localhost:8080/mcp",
           "env": {
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"                        
+            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
           }
         }
       }
@@ -230,8 +217,7 @@ popular clients.
           ],
           "env": {
             "GOOGLE_APPLICATION_CREDENTIALS": "PATH_TO_CREDENTIALS_JSON",
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"
+            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
           }
         }
       }
@@ -252,8 +238,7 @@ popular clients.
             "google-ads-mcp"
           ],
           "env": {
-            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-            "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN"
+            "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
           }
         }
       }
@@ -283,7 +268,6 @@ The final file will look like this:
         "env": {
           "GOOGLE_APPLICATION_CREDENTIALS": "PATH_TO_CREDENTIALS_JSON",
           "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID",
-          "GOOGLE_ADS_DEVELOPER_TOKEN": "YOUR_DEVELOPER_TOKEN",
           "GOOGLE_ADS_LOGIN_CUSTOMER_ID": "YOUR_MANAGER_CUSTOMER_ID"
         }
       }
@@ -328,7 +312,6 @@ You can use Cloud Build to build and push the image to Artifact Registry without
 Make sure to set the required environment variables:
 
 - `GOOGLE_PROJECT_ID`: Your Google Cloud project ID.
-- `GOOGLE_ADS_DEVELOPER_TOKEN`: The developer token you want the MCP server to use (see above).
 - `GOOGLE_ADS_MCP_OAUTH_CLIENT_ID`: The OAuth Client ID you want the MCP server to use.
 - `GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET`: The OAuth Client secret you want the MCP server to use.
 - `GOOGLE_ADS_MCP_BASE_URL`: The base URL where your MCP server is accessible: this will be automatically assigned by Google Cloud Run after your first deployment. You can update the environment variables after deployment. 
@@ -353,7 +336,7 @@ gcloud run deploy google-ads-mcp \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,GOOGLE_ADS_DEVELOPER_TOKEN=YOUR_DEVELOPER_TOKEN,GOOGLE_ADS_MCP_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET,GOOGLE_ADS_MCP_BASE_URL=YOUR_BASE_URL,GOOGLE_ADS_MCP_JWT_SIGNING_KEY=YOUR_JWT_SIGNING_KEY,GOOGLE_ADS_MCP_STORAGE_TYPE=firestore,FASTMCP_HOST=0.0.0.0"
+  --set-env-vars="GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET,GOOGLE_ADS_MCP_BASE_URL=YOUR_BASE_URL,GOOGLE_ADS_MCP_JWT_SIGNING_KEY=YOUR_JWT_SIGNING_KEY,GOOGLE_ADS_MCP_STORAGE_TYPE=firestore,FASTMCP_HOST=0.0.0.0"
 ```
 
 ### Step 3: Configure MCP Client

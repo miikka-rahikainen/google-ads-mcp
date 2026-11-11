@@ -18,6 +18,8 @@ from typing import Any, Dict
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 import ads_mcp.utils as utils
+from ads_mcp import pii_filter
+from fastmcp.exceptions import ToolError
 
 metadata_mcp = FastMCP("metadata")
 
@@ -40,6 +42,11 @@ def get_resource_metadata(resource_name: str) -> Dict[str, Any]:
     Args:
         resource_name: The name of the Google Ads resource (e.g., 'campaign', 'ad_group').
     """
+    try:
+        pii_filter.validate_resource_name(resource_name)
+    except ValueError as ex:
+        raise ToolError(str(ex))
+
     ga_service = utils.get_googleads_service("GoogleAdsFieldService")
     request = utils.get_googleads_type("SearchGoogleAdsFieldsRequest")
 
@@ -101,9 +108,10 @@ def get_resource_metadata(resource_name: str) -> Dict[str, Any]:
     except Exception as e:
         utils.logger.warning(f"Failed metrics/segments query: {e}")
 
+    blocked = pii_filter.BLOCKED_FIELDS
     return {
         "resource": resource_name,
-        "selectable": sorted(list(selectable)),
-        "filterable": sorted(list(filterable)),
-        "sortable": sorted(list(sortable)),
+        "selectable": sorted(selectable - blocked),
+        "filterable": sorted(filterable - blocked),
+        "sortable": sorted(sortable - blocked),
     }

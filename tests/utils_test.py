@@ -104,10 +104,9 @@ class TestUtils(unittest.TestCase):
         mock_popen.assert_called_once_with(["mock_cmd"], stdin=subprocess.PIPE)
 
     @patch("ads_mcp.utils.GoogleAdsClient")
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
     @patch("ads_mcp.utils._create_credentials")
     def test_googleads_client_uses_explicit_login_customer_id(
-        self, mock_credentials, _mock_developer_token, mock_client
+        self, mock_credentials, mock_client
     ):
         """A request-level manager id overrides the deployment default."""
         credentials = MagicMock()
@@ -122,16 +121,14 @@ class TestUtils(unittest.TestCase):
 
         mock_client.assert_called_once_with(
             credentials=credentials,
-            developer_token="dev-token",
             use_proto_plus=True,
             login_customer_id="4741284197",
         )
 
     @patch("ads_mcp.utils.GoogleAdsClient")
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
     @patch("ads_mcp.utils._create_credentials")
     def test_googleads_client_falls_back_to_environment_login_customer_id(
-        self, mock_credentials, _mock_developer_token, mock_client
+        self, mock_credentials, mock_client
     ):
         """The environment setting remains supported when no override is supplied."""
         credentials = MagicMock()
@@ -146,16 +143,30 @@ class TestUtils(unittest.TestCase):
 
         mock_client.assert_called_once_with(
             credentials=credentials,
-            developer_token="dev-token",
             use_proto_plus=True,
             login_customer_id="2524599092",
         )
 
-    @patch("ads_mcp.utils._get_developer_token", return_value="dev-token")
     @patch("ads_mcp.utils._create_credentials")
     def test_googleads_client_rejects_invalid_login_customer_id(
-        self, _mock_credentials, _mock_developer_token
+        self, _mock_credentials
     ):
         """Manager ids must be sent without punctuation."""
         with self.assertRaisesRegex(ValueError, "digits only"):
             utils._get_googleads_client(login_customer_id="474-128-4197")
+
+    def test_googleads_client_omits_developer_token_with_or_without_stale_environment(
+        self,
+    ):
+        from google.auth.credentials import AnonymousCredentials
+
+        for env in ({}, {"GOOGLE_ADS_DEVELOPER_TOKEN": "stale-token"}):
+            with self.subTest(stale_token=bool(env)):
+                with patch.dict(os.environ, env, clear=True):
+                    with patch.object(
+                        utils,
+                        "_create_credentials",
+                        return_value=AnonymousCredentials(),
+                    ):
+                        client = utils._get_googleads_client()
+                        self.assertIsNone(client.developer_token)

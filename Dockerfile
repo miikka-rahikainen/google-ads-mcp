@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir uv==0.12.6
 WORKDIR /app
 
 # Copy the project files into the container
-COPY . .
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY ads_mcp/ ./ads_mcp/
 
 # Install the project and its dependencies
 # We use --system to install into the system Python environment in the container

@@ -22,6 +22,7 @@ from mcp.types import ToolAnnotations
 search_mcp = FastMCP("search")
 
 import ads_mcp.utils as utils
+from ads_mcp import pii_filter
 from google.ads.googleads.errors import GoogleAdsException
 from fastmcp.exceptions import ToolError
 
@@ -49,9 +50,10 @@ def search(
 
     """
 
-    ga_service = utils.get_googleads_service(
-        "GoogleAdsService", login_customer_id=login_customer_id
-    )
+    try:
+        pii_filter.validate_resource_name(resource)
+    except ValueError as ex:
+        raise ToolError(str(ex))
 
     query_parts = [f"SELECT {','.join(fields)} FROM {resource}"]
 
@@ -67,7 +69,20 @@ def search(
     query_parts.append(" PARAMETERS omit_unselected_resource_names=true")
 
     query = "".join(query_parts)
-    utils.logger.info(f"ads_mcp.search query {query}")
+
+    blocked = pii_filter.find_blocked_references(query)
+    if blocked:
+        utils.logger.warning(
+            f"ads_mcp.search blocked query referencing {', '.join(blocked)}"
+        )
+        raise ToolError(
+            "The query references resources or fields that are blocked because "
+            f"they can contain personal data: {', '.join(blocked)}"
+        )
+
+    ga_service = utils.get_googleads_service(
+        "GoogleAdsService", login_customer_id=login_customer_id
+    )
 
     try:
         query_result = ga_service.search_stream(
@@ -101,7 +116,7 @@ def _search_tool_description() -> str:
 
     try:
         with open(utils.get_gaql_resources_filepath(), "r") as file:
-            file_content = file.read()
+            file_content = pii_filter.remove_blocked_resources(file.read())
     except FileNotFoundError:
         utils.logger.error("The specified file was not found.")
 
@@ -139,6 +154,12 @@ def _search_tool_description() -> str:
     To find out which specific fields (including compatible metrics and segments) you can select, filter by, or sort by for a given resource, you MUST use the `get_resource_metadata` tool.
     Do not guess the fields. Use the tool to look them up.
     Once you have the fields, ensure the whole field name is used (e.g., 'campaign.id', not just 'id'). Wildcards and partial fields are not allowed.
+
+### Blocked data
+    Resources and fields that can contain personal data are blocked and are
+    not in the list below, for example click_view, search_term_view,
+    user_list, lead_form_submission_data and change_event.user_email.
+    Queries that reference them are rejected.
 
 ### Valid resources
     What follows is a list of valid resources that can be queried.

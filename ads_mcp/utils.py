@@ -82,16 +82,6 @@ def _create_credentials() -> google.auth.credentials.Credentials:
     return credentials
 
 
-def _get_developer_token() -> str:
-    """Returns the developer token from the environment variable GOOGLE_ADS_DEVELOPER_TOKEN."""
-    dev_token = os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN")
-    if dev_token is None:
-        raise ValueError(
-            "GOOGLE_ADS_DEVELOPER_TOKEN environment variable not set."
-        )
-    return dev_token
-
-
 def _get_login_customer_id() -> str | None:
     """Returns login customer id, if set, from the environment variable GOOGLE_ADS_LOGIN_CUSTOMER_ID."""
     return os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
@@ -102,7 +92,6 @@ def _get_googleads_client(
 ) -> GoogleAdsClient:
     args = {
         "credentials": _create_credentials(),
-        "developer_token": _get_developer_token(),
         "use_proto_plus": True,
     }
 
