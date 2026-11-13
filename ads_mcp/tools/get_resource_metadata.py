@@ -16,10 +16,8 @@
 
 from typing import Any, Dict
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 import ads_mcp.utils as utils
-from ads_mcp import pii_filter
 
 metadata_mcp = FastMCP("metadata")
 
@@ -46,11 +44,6 @@ def get_resource_metadata(
         resource_name: The name of the Google Ads resource (e.g., 'campaign', 'ad_group').
         login_customer_id: Optional manager customer ID to use as the login-customer-id header.
     """
-    try:
-        pii_filter.validate_resource_name(resource_name)
-    except ValueError as ex:
-        raise ToolError(str(ex)) from ex
-
     ga_service = utils.get_googleads_service(
         "GoogleAdsFieldService", login_customer_id=login_customer_id
     )
@@ -114,10 +107,9 @@ def get_resource_metadata(
     except Exception as e:
         utils.logger.warning(f"Failed metrics/segments query: {e}")
 
-    blocked = pii_filter.BLOCKED_FIELDS
     return {
         "resource": resource_name,
-        "selectable": sorted(selectable - blocked),
-        "filterable": sorted(filterable - blocked),
-        "sortable": sorted(sortable - blocked),
+        "selectable": sorted(selectable),
+        "filterable": sorted(filterable),
+        "sortable": sorted(sortable),
     }
